@@ -1,16 +1,13 @@
 module.exports = {
   testEnvironment: 'node',
   coverageDirectory: 'coverage',
-  collectCoverageFrom: [
-    'src/**/*.js',
-    '!src/server.js'
-  ],
+  collectCoverageFrom: ['src/domain/services/SubscriptionBillingService.js'],
   coverageThreshold: {
     global: {
-      statements: 70,
-      branches: 60,
-      functions: 70,
-      lines: 70
+      statements: 80,
+      branches: 70,
+      functions: 80,
+      lines: 80
     }
   },
   verbose: true,

@@ -1,74 +1,27 @@
-version: '3.8'
-
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: gpp_app
+  api:
+    build: .
     ports:
       - "3000:3000"
     environment:
-      - PORT=3000
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://grant_user:grant_password@db:5432/grant_db
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=grant_user
-      - DB_PASSWORD=grant_password
-      - DB_NAME=grant_db
-      - REDIS_URL=redis://cache:6379
-      - REDIS_HOST=cache
-      - REDIS_PORT=6379
-      - JWT_SECRET=super_secret_jwt_key_grant_management_2026
-      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-mock_oauth_client_id}
-      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-mock_oauth_client_secret}
-      - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI:-http://localhost:3000/api/auth/google/callback}
+      DATABASE_URL: postgresql://billing_user:billing_password@db:5432/billing_db
+      PORT: 3000
+      PAYMENT_GATEWAY_MODE: mock
+      PAYMENT_API_KEY: mock_payment_key
     depends_on:
       db:
         condition: service_healthy
-      cache:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: always
 
   db:
-    image: postgres:15-alpine
-    container_name: gpp_db
+    image: postgres:16-alpine
     environment:
-      POSTGRES_USER: grant_user
-      POSTGRES_PASSWORD: grant_password
-      POSTGRES_DB: grant_db
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: billing_user
+      POSTGRES_PASSWORD: billing_password
+      POSTGRES_DB: billing_db
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U grant_user -d grant_db"]
+      test: ["CMD-SHELL", "pg_isready -U billing_user -d billing_db"]
       interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 5s
-    restart: always
-
-  cache:
-    image: redis:7-alpine
-    container_name: gpp_cache
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    restart: always
-
-volumes:
-  pgdata:
+      retries: 10

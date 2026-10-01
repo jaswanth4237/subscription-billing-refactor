@@ -1,148 +1,119 @@
-# Refactored Subscription Engine (Hexagonal Architecture / Ports & Adapters)
+# Subscription Billing Refactor
 
-This repository contains the refactored, highly modular, and fully unit-testable Subscription Billing Engine. The original legacy God-class (`LegacySubscriptionManager`) mixed direct SQL queries, third-party payment HTTP calls, non-deterministic system clock calls (`new Date()`), and complex business logic inside a single monolithic class.
+A Node.js and Express implementation of a subscription renewal service refactored from a tightly coupled legacy God class into a Ports and Adapters architecture.
 
-We refactored the engine using **SOLID principles**, **Ports and Adapters (Hexagonal Architecture)**, and **Dependency Injection (DI)** with **Express.js**.
+## What This Demonstrates
 
----
+- Domain logic isolated from PostgreSQL, payment providers, and the system clock.
+- Constructor-based dependency injection.
+- Explicit ports for repositories, payment, and time.
+- Deterministic unit tests using stubs and spies.
+- A real HTTP composition root with PostgreSQL adapters.
+- Docker Compose startup with database schema creation and seed data.
 
-## 🏗️ Architecture Overview
+## Architecture
 
-```
-+-------------------------------------------------------------------+
-|                        Infrastructure Layer                      |
-|                                                                   |
-|   +-------------------+  +------------------+  +---------------+  |
-|   | PostgresSubRepo   |  | MockPaymentGtwy  |  | SystemTime    |  |
-|   | (PostgreSQL Adapter)|  | (Payment Adapter)|  | (Clock Adap.) |  |
-|   +---------+---------+  +--------+---------+  +-------+-------+  |
-+-------------|---------------------|--------------------|----------+
-              | Implements          | Implements         | Implements
-              v                     v                    v
-+-------------------------------------------------------------------+
-|                        Domain Layer (Pure Logic)                  |
-|                                                                   |
-|   +-------------------+  +------------------+  +---------------+  |
-|   | ISubscriptionRepo |  | IPaymentGateway  |  | ITimeProvider |  |
-|   | (Port / Interface)|  | (Port / Interface)| |(Port/Interface)| |
-|   +---------+---------+  +--------+---------+  +-------+-------+  |
-|             ^                     ^                    ^          |
-|             | Uses Abstractions   | Uses Abstractions  | Uses     |
-|             +---------------------+--------------------+          |
-|                                   |                               |
-|                     +-------------+-------------+                 |
-|                     | SubscriptionBillingService|                 |
-|                     |     (Core Domain Logic)   |                 |
-|                     +---------------------------+                 |
-+-------------------------------------------------------------------+
+```text
+src/
+	domain/
+		models/       Plain User and Subscription models
+		ports/        ISubscriptionRepository, IUserRepository,
+									IPaymentGateway, and ITimeProvider contracts
+		services/     SubscriptionBillingService business rules
+	infrastructure/
+		adapters/     PostgreSQL, mock payment, and system-time adapters
+		database/     PostgreSQL pool
+	api/             Express app and dependency composition root
+tests/
+	unit/            Isolated domain tests
+	integration/     HTTP boundary tests with injected test doubles
 ```
 
----
+The domain layer does not import Express, PostgreSQL, HTTP clients, or environment configuration. Infrastructure depends on the domain contracts, and `src/api/server.js` wires the concrete adapters together.
 
-## 📁 Repository Structure
+## Business Rules
 
-```
-├── docs/
-│   └── ADR-001-Refactoring-God-Class.md  # Architectural Decision Record
-├── legacy/
-│   └── LegacySubscriptionManager.js      # Original legacy God-class (for reference)
-├── src/
-│   ├── domain/
-│   │   ├── models/                       # Plain domain models (User, Subscription)
-│   │   │   ├── User.js
-│   │   │   └── Subscription.js
-│   │   ├── ports/                        # Pure Interfaces / Ports
-│   │   │   ├── ITimeProvider.js
-│   │   │   ├── IPaymentGateway.js
-│   │   │   ├── ISubscriptionRepository.js
-│   │   │   └── IUserRepository.js
-│   │   └── services/                     # Core business logic (DI)
-│   │       └── SubscriptionBillingService.js
-│   ├── infrastructure/
-│   │   ├── adapters/                     # Concrete technology adapters
-│   │   │   ├── SystemTimeProvider.js
-│   │   │   ├── MockPaymentGateway.js
-│   │   │   ├── PostgresSubscriptionRepository.js
-│   │   │   └── PostgresUserRepository.js
-│   │   └── database/                     # DB client pool & seed scripts
-│   │       ├── db.js
-│   │       ├── init.sql
-│   │       └── seed.js
-│   └── api/
-│       ├── controllers/                  # Controller composition root
-│       │   └── subscriptionController.js
-│       └── server.js                     # Express API entrypoint
-├── tests/
-│   ├── unit/                             # Fast unit tests using test doubles
-│   │   └── SubscriptionBillingService.test.js
-│   └── integration/                      # API integration tests
-│       └── api.test.js
-├── .env.example                          # Documented environment variables
-├── .env                                  # Active environment config
-├── docker-compose.yml                    # Docker orchestration
-├── Dockerfile                            # API Container Dockerfile
-├── package.json                          # Dependencies & scripts
-└── submission.json                       # Seeded test data mappings
-```
+`SubscriptionBillingService`:
 
----
+1. Rejects an unknown user.
+2. Rejects a missing subscription.
+3. Rejects a subscription that has not expired.
+4. Applies a 10% discount when the injected current date is in December.
+5. Charges the payment gateway and reports payment failures safely.
+6. Extends the subscription by exactly one year from the injected current time after successful payment.
 
-## 🚀 Getting Started & Execution
+## Run Tests
 
-### 1. Run Unit & Integration Tests
 ```bash
+npm install
 npm test
-```
-To check unit test code coverage:
-```bash
 npm run test:coverage
 ```
 
-### 2. Run via Docker Compose
+The tests do not require PostgreSQL, Docker, network access, or payment credentials. The domain service has 100% statement, branch, function, and line coverage in the current test suite.
+
+## Run With Docker Compose
+
+Docker Desktop must be running first.
+
 ```bash
-docker-compose up --build -d
+docker compose up --build
 ```
 
-### 3. API Endpoint Specification
+Compose starts:
 
-**Endpoint**: `POST /api/renew`
+- `api`: Express server on `http://localhost:3000`
+- `db`: PostgreSQL with a healthcheck and automatic schema/seed initialization
 
-#### Request:
+Stop the services with:
+
+```bash
+docker compose down
+```
+
+Use `docker compose down -v` when you need to discard the database volume and rerun the seed script from scratch.
+
+## API
+
+### Renew a subscription
+
+```http
+POST /api/renew
+Content-Type: application/json
+```
+
+Request:
+
 ```json
-{
-  "userId": "user-expired-123"
-}
+{ "userId": "user-expired-123" }
 ```
 
-#### Response (200 OK - Success):
+Successful response, HTTP 200:
+
 ```json
-{
-  "success": true,
-  "message": "Renewal successful"
-}
+{ "success": true, "message": "Renewal successful" }
 ```
 
-#### Response (400 Bad Request - Business Rule Failure):
+Business-rule failure, HTTP 400:
+
 ```json
-{
-  "success": false,
-  "message": "Subscription is not yet expired"
-}
+{ "success": false, "message": "Subscription is not yet expired" }
 ```
 
----
+The health endpoint is `GET /health`.
 
-## 🎯 Verification Checklist
+## Seed Data
 
-- [x] **Domain Ports**: Abstract interfaces defined in `src/domain/ports/` with zero infrastructure dependencies.
-- [x] **SubscriptionBillingService**: Uses Dependency Injection, zero direct clock (`new Date()`) or database calls.
-- [x] **Business Rules Implemented**:
-  1. Fail if user or subscription not found.
-  2. Fail if subscription is active/not expired.
-  3. Apply 10% discount in December (`month === 11`).
-  4. Extend expiration by exactly 1 year from current time upon successful payment.
-- [x] **Infrastructure Adapters**: Concrete implementations in `src/infrastructure/adapters/`.
-- [x] **Isolated Unit Tests**: 100% test coverage on `SubscriptionBillingService.js`.
-- [x] **Architecture Decision Record**: Detailed ADR in `docs/ADR-001-Refactoring-God-Class.md` matching required sections (`# Context`, `# Decision`, `# Consequences`, `# Code Smells Addressed`).
-- [x] **Docker Compose Setup**: Automated startup, Postgres healthcheck, volume mounts, and automated schema/seed execution.
-- [x] **Submission & Environment Mapping**: `submission.json` and `.env.example` provided.
+The database is initialized by [init-db.sql](init-db.sql). The evaluator IDs are recorded in [submission.json](submission.json):
+
+- `user-expired-123`: successful renewal path
+- `user-active-123`: unexpired subscription failure path
+- `user-does-not-exist`: missing user path
+
+## Configuration
+
+Copy `.env.example` to `.env` for local configuration. Docker Compose supplies the database host as `db`; local non-Docker development should use a PostgreSQL instance reachable at the configured `DATABASE_URL`.
+
+## Documentation
+
+The architectural rationale and trade-offs are documented in [docs/ADR-001-Refactoring-God-Class.md](docs/ADR-001-Refactoring-God-Class.md).
