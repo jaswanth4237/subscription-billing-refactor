@@ -1,6 +1,6 @@
 # Subscription Billing Refactor
 
-A Node.js and Express implementation of a subscription renewal service refactored from a tightly coupled legacy God class into a Ports and Adapters architecture.
+Node.js and Express implementation of a subscription renewal service refactored from a tightly coupled legacy God class into a Ports and Adapters architecture.
 
 ## What This Demonstrates
 
